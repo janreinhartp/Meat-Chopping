@@ -2,6 +2,9 @@
 #include "control.h"
 #include <Preferences.h>
 
+#include "PCF8575.h"
+PCF8575 pcf8575(0x22);
+
 Preferences Settings;
 
 char *secondsToHHMMSS(int total_seconds)
@@ -69,12 +72,11 @@ String menu_items[NUM_MAIN_ITEMS][2] = { // array with item names
     {"RUN AUTO", "ENTER TO RUN AUTO"}};
 
 String setting_items[NUM_SETTING_ITEMS][2] = { // array with item names
-    {"COOKING TIME", "MIN"},
-    {"DRYING TIME", "MIN"},
+    {"LENGTH", "SEC"},
     {"SAVE"}};
 
-int parametersTimer[NUM_SETTING_ITEMS] = {1, 1, 1};
-int parametersTimerMaxValue[NUM_SETTING_ITEMS] = {1200, 1200, 1200};
+int parametersTimer[NUM_SETTING_ITEMS] = {1};
+int parametersTimerMaxValue[NUM_SETTING_ITEMS] = {1200};
 
 String testmachine_items[NUM_TESTMACHINE_ITEMS] = { // array with item names
     "CUTTER",
@@ -83,36 +85,55 @@ String testmachine_items[NUM_TESTMACHINE_ITEMS] = { // array with item names
     "ROLLER",
     "EXIT"};
 
-Control rCutter(14);
-Control rLinearF(27);
-Control rLinearR(28);
-Control rRoller(25);
+Control rCutter(0);
+Control rLinearF(0);
+Control rLinearR(0);
+Control rRoller(0);
+
+int cCutter = P2;
+int cLinearF = P0;
+int cLinearR = P1;
+int cRoller = P3;
+
+int endLinear = 32;
+int resetChopper = 35;
+
+void initRelays()
+{
+  pcf8575.pinMode(cCutter, OUTPUT);
+  pcf8575.digitalWrite(cCutter, LOW);
+
+  pcf8575.pinMode(cLinearF, OUTPUT);
+  pcf8575.digitalWrite(cLinearF, LOW);
+
+  pcf8575.pinMode(cLinearR, OUTPUT);
+  pcf8575.digitalWrite(cLinearR, LOW);
+
+  pcf8575.pinMode(cRoller, OUTPUT);
+  pcf8575.digitalWrite(cRoller, LOW);
+
+  pcf8575.begin();
+}
 
 void saveSettings()
 {
-  Settings.putInt("cookingtime", parametersTimer[0]);
-  Settings.putInt("dryingtime", parametersTimer[1]);
+  Settings.putInt("length", parametersTimer[0]);
   Serial.println("---- Saving Timer  Settings ----");
-  Serial.println("Cooking Time : " + String(parametersTimer[0]));
-  Serial.println("Drying Time : " + String(parametersTimer[1]));
+  Serial.println("Length Time : " + String(parametersTimer[0]));
   Serial.println("---- Saving Timer  Settings ----");
 }
 void loadSettings()
 {
   Serial.println("---- Start Reading Settings ----");
-  parametersTimer[0] = Settings.getInt("cookingtime");
-  parametersTimer[1] = Settings.getInt("dryingtime");
-  Serial.println("Pump Timer : " + String(parametersTimer[0]));
-  Serial.println("Pump Bleach Timer : " + String(parametersTimer[1]));
+  parametersTimer[0] = Settings.getInt("length");
+  Serial.println("Length Timer : " + String(parametersTimer[0]));
   Serial.println("---- End Reading Settings ----");
-  // TimerCooking.setTimer(secondsToHHMMSS(parametersTimer[0] * 60));
-  // TimerDrying.setTimer(secondsToHHMMSS(parametersTimer[1] * 60));
 }
 
-static const int buttonPin = 12;
+static const int buttonPin = 13;
 int buttonStatePrevious = HIGH;
 
-static const int buttonPin2 = 13;
+static const int buttonPin2 = 12;
 int buttonStatePrevious2 = HIGH;
 
 static const int buttonPin3 = 15;
@@ -150,6 +171,49 @@ void InitializeButtons()
   pinMode(buttonPin, INPUT_PULLUP);
   pinMode(buttonPin2, INPUT_PULLUP);
   pinMode(buttonPin3, INPUT_PULLUP);
+  pinMode(endLinear, INPUT);
+  pinMode(resetChopper, INPUT);
+}
+
+void StopAll()
+{
+  rCutter.stop();
+  rLinearF.stop();
+  rLinearR.stop();
+  rRoller.stop();
+
+  pcf8575.digitalWrite(cCutter, HIGH);
+  pcf8575.digitalWrite(cLinearF, HIGH);
+  pcf8575.digitalWrite(cLinearR, HIGH);
+  pcf8575.digitalWrite(cRoller, HIGH);
+}
+
+bool RunAutoFlag = false;
+int RunAutoStatus = 0;
+
+void runAuto()
+{
+  /*
+  Case 1: Move 1 inch Roller and Linear
+  Case 2: Run the Cutter Until Limit Switch is Reached
+  Case 3: Check if the Linear is Full Stroke if false move to Case 1
+  */
+
+  switch (RunAutoStatus)
+  {
+  case 1:
+    /* code */
+    break;
+  case 2:
+    /* code */
+    break;
+  case 3:
+    /* code */
+    break;
+
+  default:
+    break;
+  }
 }
 
 void readButtonUpState()
@@ -486,10 +550,12 @@ void readButtonEnterState()
             if (rCutter.getMotorState() == false)
             {
               rCutter.relayOn();
+              pcf8575.digitalWrite(cCutter, false);
             }
             else
             {
               rCutter.relayOff();
+              pcf8575.digitalWrite(cCutter, true);
             }
           }
           else if (currentTestMenuScreen == 1)
@@ -497,10 +563,12 @@ void readButtonEnterState()
             if (rLinearF.getMotorState() == false)
             {
               rLinearF.relayOn();
+              pcf8575.digitalWrite(cLinearF, false);
             }
             else
             {
               rLinearF.relayOff();
+              pcf8575.digitalWrite(cLinearF, true);
             }
           }
           else if (currentTestMenuScreen == 2)
@@ -508,10 +576,12 @@ void readButtonEnterState()
             if (rLinearR.getMotorState() == false)
             {
               rLinearR.relayOn();
+              pcf8575.digitalWrite(cLinearR, false);
             }
             else
             {
               rLinearR.relayOff();
+              pcf8575.digitalWrite(cLinearR, true);
             }
           }
           else if (currentTestMenuScreen == 3)
@@ -519,10 +589,12 @@ void readButtonEnterState()
             if (rRoller.getMotorState() == false)
             {
               rRoller.relayOn();
+              pcf8575.digitalWrite(cRoller, false);
             }
             else
             {
               rRoller.relayOff();
+              pcf8575.digitalWrite(cRoller, true);
             }
           }
         }
@@ -684,16 +756,16 @@ void printScreen()
     {
     case 0:
       // printTestScreen(testmachine_items[currentTestMenuScreen], "Status", ContactorVFD.getMotorState(), false);
-      // printTestScreen(testmachine_items[currentTestMenuScreen], "Status", Heater.getMotorState(), false);
+      printTestScreen(testmachine_items[currentTestMenuScreen], "Status", rCutter.getMotorState(), false);
       break;
     case 1:
-      // printTestScreen(testmachine_items[currentTestMenuScreen], "Status", Vacuum.getMotorState(), false);
+      printTestScreen(testmachine_items[currentTestMenuScreen], "Status", rLinearF.getMotorState(), false);
       break;
     case 2:
-      // printTestScreen(testmachine_items[currentTestMenuScreen], "Status", VacuumRelease.getMotorState(), false);
+      printTestScreen(testmachine_items[currentTestMenuScreen], "Status", rLinearR.getMotorState(), false);
       break;
     case 3:
-      // printTestScreen(testmachine_items[currentTestMenuScreen], "Status", WaterValve.getMotorState(), false);
+      printTestScreen(testmachine_items[currentTestMenuScreen], "Status", rRoller.getMotorState(), false);
       break;
     case 4:
       printTestScreen(testmachine_items[currentTestMenuScreen], "", true, true);
@@ -739,7 +811,7 @@ void setup()
   initializeLCD();
   InitializeButtons();
   Settings.begin("timerSetting", false);
-
+  initRelays();
   // saveSettings();
   // loadSettings();
 }
