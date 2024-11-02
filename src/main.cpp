@@ -58,7 +58,7 @@ byte slowChar[] = {
 
 // Declaration of LCD Variables
 const int NUM_MAIN_ITEMS = 3;
-const int NUM_SETTING_ITEMS = 3;
+const int NUM_SETTING_ITEMS = 2;
 const int NUM_TESTMACHINE_ITEMS = 5;
 
 int currentMainScreen;
