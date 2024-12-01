@@ -59,7 +59,7 @@ byte slowChar[] = {
 // Declaration of LCD Variables
 const int NUM_MAIN_ITEMS = 3;
 const int NUM_SETTING_ITEMS = 2;
-const int NUM_TESTMACHINE_ITEMS = 5;
+const int NUM_TESTMACHINE_ITEMS = 4;
 
 int currentMainScreen;
 int currentSettingScreen;
@@ -82,13 +82,14 @@ String testmachine_items[NUM_TESTMACHINE_ITEMS] = { // array with item names
     "CUTTER",
     "LINEAR F",
     "LINEAR R",
-    "ROLLER",
     "EXIT"};
 
 Control rCutter(0);
 Control rLinearF(0);
 Control rLinearR(0);
 Control rRoller(0);
+
+Control timerLinear(0);
 
 int cCutter = P2;
 int cLinearF = P0;
@@ -127,6 +128,7 @@ void loadSettings()
   Serial.println("---- Start Reading Settings ----");
   parametersTimer[0] = Settings.getInt("length");
   Serial.println("Length Timer : " + String(parametersTimer[0]));
+  timerLinear.setTimer(secondsToHHMMSS(parametersTimer[0]));
   Serial.println("---- End Reading Settings ----");
 }
 
@@ -190,6 +192,7 @@ void StopAll()
 
 bool RunAutoFlag = false;
 int RunAutoStatus = 0;
+bool cutterResetStatus = false;
 
 void runAuto()
 {
@@ -202,10 +205,32 @@ void runAuto()
   switch (RunAutoStatus)
   {
   case 1:
-    /* code */
+    if (timerLinear.isStopped() == false)
+    {
+      timerLinear.run();
+      if (timerLinear.isTimerCompleted() == true)
+      {
+        rLinearR.relayOff();
+        pcf8575.digitalWrite(cLinearR, true);
+        RunAutoStatus = 2;
+      }
+      else
+      {
+        // Software Interlock
+        rLinearR.relayOff();
+        pcf8575.digitalWrite(cLinearR, true);
+
+        rLinearF.relayOn();
+        pcf8575.digitalWrite(cLinearF, false);
+      }
+    }
     break;
   case 2:
-    /* code */
+    if (cutterResetStatus == true)
+    {
+      rCutter.relayOn();
+      pcf8575.digitalWrite(cCutter, false);
+    }
     break;
   case 3:
     /* code */
@@ -562,6 +587,10 @@ void readButtonEnterState()
           {
             if (rLinearF.getMotorState() == false)
             {
+              // Software Interlock
+              rLinearR.relayOff();
+              pcf8575.digitalWrite(cLinearR, true);
+
               rLinearF.relayOn();
               pcf8575.digitalWrite(cLinearF, false);
             }
@@ -575,6 +604,10 @@ void readButtonEnterState()
           {
             if (rLinearR.getMotorState() == false)
             {
+              // Software Interlock
+              rLinearF.relayOff();
+              pcf8575.digitalWrite(cLinearF, true);
+
               rLinearR.relayOn();
               pcf8575.digitalWrite(cLinearR, false);
             }
@@ -584,19 +617,19 @@ void readButtonEnterState()
               pcf8575.digitalWrite(cLinearR, true);
             }
           }
-          else if (currentTestMenuScreen == 3)
-          {
-            if (rRoller.getMotorState() == false)
-            {
-              rRoller.relayOn();
-              pcf8575.digitalWrite(cRoller, false);
-            }
-            else
-            {
-              rRoller.relayOff();
-              pcf8575.digitalWrite(cRoller, true);
-            }
-          }
+          // else if (currentTestMenuScreen == 3)
+          // {
+          //   if (rRoller.getMotorState() == false)
+          //   {
+          //     rRoller.relayOn();
+          //     pcf8575.digitalWrite(cRoller, false);
+          //   }
+          //   else
+          //   {
+          //     rRoller.relayOff();
+          //     pcf8575.digitalWrite(cRoller, true);
+          //   }
+          // }
         }
         else if (currentMainScreen == 2 && runAutoFlag == true)
         {
