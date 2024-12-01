@@ -66,6 +66,8 @@ int currentSettingScreen;
 int currentTestMenuScreen;
 bool settingFlag, settingEditFlag, testMenuFlag, runAutoFlag, refreshScreen = false;
 
+bool CutterStatusSensor, LinearStatusSensor = false;
+
 String menu_items[NUM_MAIN_ITEMS][2] = { // array with item names
     {"SETTING", "ENTER TO EDIT"},
     {"TEST MACHINE", "ENTER TO TEST"},
@@ -90,6 +92,7 @@ Control rLinearR(0);
 Control rRoller(0);
 
 Control timerLinear(0);
+Control timerLinearHoming(0);
 
 int cCutter = P2;
 int cLinearF = P0;
@@ -129,6 +132,7 @@ void loadSettings()
   parametersTimer[0] = Settings.getInt("length");
   Serial.println("Length Timer : " + String(parametersTimer[0]));
   timerLinear.setTimer(secondsToHHMMSS(parametersTimer[0]));
+  timerLinearHoming.setTimer(secondsToHHMMSS(40));
   Serial.println("---- End Reading Settings ----");
 }
 
@@ -193,6 +197,7 @@ void StopAll()
 bool RunAutoFlag = false;
 int RunAutoStatus = 0;
 bool cutterResetStatus = false;
+bool initialMoveCutter = false;
 
 void runAuto()
 {
@@ -205,14 +210,55 @@ void runAuto()
   switch (RunAutoStatus)
   {
   case 1:
+    // Home All Motors
+    if (timerLinearHoming.isStopped() == false)
+    {
+      timerLinearHoming.run();
+      if (timerLinearHoming.isTimerCompleted() == true)
+      {
+        rLinearR.relayOff();
+        pcf8575.digitalWrite(cLinearR, true);
+      }
+      else
+      {
+        // Software Interlock
+        rLinearF.relayOff();
+        pcf8575.digitalWrite(cLinearF, true);
+
+        rLinearR.relayOn();
+        pcf8575.digitalWrite(cLinearR, false);
+      }
+    }
+
+    if (CutterStatusSensor == 1)
+    {
+      rCutter.relayOn();
+      pcf8575.digitalWrite(cCutter, false);
+    }
+    else
+    {
+      rCutter.relayOff();
+      pcf8575.digitalWrite(cCutter, true);
+    }
+
+    if (CutterStatusSensor == 0 && timerLinearHoming.isStopped() == true)
+    {
+      RunAutoStatus = 2;
+      timerLinear.start();
+    }
+
+    break;
+  case 2:
     if (timerLinear.isStopped() == false)
     {
       timerLinear.run();
       if (timerLinear.isTimerCompleted() == true)
       {
         rLinearR.relayOff();
-        pcf8575.digitalWrite(cLinearR, true);
-        RunAutoStatus = 2;
+        pcf8575.digitalWrite(cLinearF, true);
+        RunAutoStatus = 3;
+        initialMoveCutter = true;
+        // cutterResetStatus = true;
       }
       else
       {
@@ -225,18 +271,62 @@ void runAuto()
       }
     }
     break;
-  case 2:
-    if (cutterResetStatus == true)
-    {
-      rCutter.relayOn();
-      pcf8575.digitalWrite(cCutter, false);
-    }
-    break;
   case 3:
-    /* code */
+
+    if (initialMoveCutter == true)
+    {
+      if (CutterStatusSensor == 0)
+      {
+        rCutter.relayOn();
+        pcf8575.digitalWrite(cCutter, false);
+      }
+      else
+      {
+        initialMoveCutter = false;
+      }
+    }
+    else
+    {
+      if (CutterStatusSensor == 0)
+      {
+        rCutter.relayOff();
+        pcf8575.digitalWrite(cCutter, true);
+        RunAutoStatus = 4;
+      }
+      else
+      {
+        rCutter.relayOn();
+        pcf8575.digitalWrite(cCutter, false);
+      }
+    }
+
+    // if (cutterResetStatus == true)
+    // {
+    //   rCutter.relayOn();
+    //   pcf8575.digitalWrite(cCutter, false);
+    //   if (cutterResetStatus == true && CutterStatusSensor == false)
+    //   {
+    //     rCutter.relayOff();
+    //     pcf8575.digitalWrite(cCutter, true);
+    //     RunAutoStatus = 3;
+    //   }
+    // }
+    break;
+  case 4:
+    if (LinearStatusSensor == false)
+    {
+      RunAutoStatus = 0;
+    }
+    else
+    {
+      RunAutoStatus = 2;
+      timerLinear.start();
+    }
     break;
 
   default:
+    RunAutoFlag = false;
+    StopAll();
     break;
   }
 }
@@ -633,10 +723,9 @@ void readButtonEnterState()
         }
         else if (currentMainScreen == 2 && runAutoFlag == true)
         {
-          // stopAllMotors();
+          StopAll();
           runAutoFlag = false;
-          // runAutoStatus = 0;
-          // runCookingStatus = 0;
+          RunAutoStatus = 0;
         }
         else
         {
@@ -651,9 +740,8 @@ void readButtonEnterState()
           else if (currentMainScreen == 2)
           {
             runAutoFlag = true;
-            // runAutoStatus = 1;
-            // runCookingStatus = 1;
-            // TimerCooking.start();
+            RunAutoStatus = 1;
+            timerLinearHoming.start();
           }
         }
       }
@@ -670,6 +758,24 @@ void ReadButtons()
   readButtonEnterState();
   readButtonUpState();
   readButtonDownState();
+
+  if (digitalRead(endLinear) == true)
+  {
+    LinearStatusSensor = false;
+  }
+  else
+  {
+    LinearStatusSensor = true;
+  }
+
+  if (digitalRead(resetChopper) == true)
+  {
+    CutterStatusSensor = false;
+  }
+  else
+  {
+    CutterStatusSensor = true;
+  }
 }
 
 void initializeLCD()
@@ -809,28 +915,22 @@ void printScreen()
   }
   else if (runAutoFlag == true)
   {
-    // switch (runAutoStatus)
-    // {
-    // case 1:
-    //   switch (runCookingStatus)
-    //   {
-    //   case 1:
-    //     printRunAuto("Cooking", "Pouring Water", TimerCooking.getTimeRemaining());
-    //     break;
-    //   case 2:
-    //     printRunAuto("Cooking", "Boiling", TimerCooking.getTimeRemaining());
-    //     break;
-    //   default:
-    //     break;
-    //   }
-    //   break;
-
-    // case 2:
-    //   printRunAuto("Drying", "N/A", TimerDrying.getTimeRemaining());
-    //   break;
-    // default:
-    //   break;
-    // }
+    switch (RunAutoStatus)
+    {
+    case 1:
+      printRunAuto("Homing", "All Motors", timerLinearHoming.getTimeRemaining());
+      break;
+    case 2:
+      printRunAuto("Moving Linear", "Forward", timerLinear.getTimeRemaining());
+      break;
+    case 3:
+      printRunAuto("Cutting", "N/A", "N/A");
+      break;
+    case 4:
+      printRunAuto("Checking", "Linear", "N/A");
+    default:
+      break;
+    }
   }
   else
   {
@@ -846,7 +946,7 @@ void setup()
   Settings.begin("timerSetting", false);
   initRelays();
   // saveSettings();
-  // loadSettings();
+  loadSettings();
 }
 
 void loop()
@@ -860,7 +960,7 @@ void loop()
 
   if (runAutoFlag == true)
   {
-    // runAuto();
+    runAuto();
 
     unsigned long currentMillisRunAuto = millis();
     if (currentMillisRunAuto - previousMillisRunAuto >= intervalRunAuto)
@@ -869,4 +969,9 @@ void loop()
       refreshScreen = true;
     }
   }
+  // Serial.print("Cutter Sensor:");
+  // Serial.println(CutterStatusSensor);
+  // Serial.print("Linear Sensor:");
+  // Serial.println(LinearStatusSensor);
+  // delay(1000);
 }
