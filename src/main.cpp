@@ -74,11 +74,11 @@ String menu_items[NUM_MAIN_ITEMS][2] = { // array with item names
     {"RUN AUTO", "ENTER TO RUN AUTO"}};
 
 String setting_items[NUM_SETTING_ITEMS][2] = { // array with item names
-    {"LENGTH", "SEC"},
+    {"LENGTH", "MILLIS"},
     {"SAVE"}};
 
 int parametersTimer[NUM_SETTING_ITEMS] = {1};
-int parametersTimerMaxValue[NUM_SETTING_ITEMS] = {1200};
+int parametersTimerMaxValue[NUM_SETTING_ITEMS] = {60000};
 
 String testmachine_items[NUM_TESTMACHINE_ITEMS] = { // array with item names
     "CUTTER",
@@ -170,7 +170,10 @@ unsigned long currentMillis3;
 
 unsigned long currentMillisRunAuto;
 unsigned long previousMillisRunAuto;
-unsigned long intervalRunAuto = 1000;
+unsigned long intervalRunAuto = 200;
+
+unsigned long currentMillisLinear;
+unsigned long previousMillisLinear;
 
 void InitializeButtons()
 {
@@ -230,7 +233,7 @@ void runAuto()
       }
     }
 
-    if (CutterStatusSensor == 1)
+    if (CutterStatusSensor == 0)
     {
       rCutter.relayOn();
       pcf8575.digitalWrite(cCutter, false);
@@ -241,53 +244,54 @@ void runAuto()
       pcf8575.digitalWrite(cCutter, true);
     }
 
-    if (CutterStatusSensor == 0 && timerLinearHoming.isStopped() == true)
+    if (CutterStatusSensor == 1 && timerLinearHoming.isStopped() == true)
     {
       RunAutoStatus = 2;
-      timerLinear.start();
+      previousMillisLinear = millis();
+      // timerLinear.start();
     }
-
     break;
   case 2:
-    if (timerLinear.isStopped() == false)
-    {
-      timerLinear.run();
-      if (timerLinear.isTimerCompleted() == true)
-      {
-        rLinearR.relayOff();
-        pcf8575.digitalWrite(cLinearF, true);
-        RunAutoStatus = 3;
-        initialMoveCutter = true;
-        // cutterResetStatus = true;
-      }
-      else
-      {
-        // Software Interlock
-        rLinearR.relayOff();
-        pcf8575.digitalWrite(cLinearR, true);
 
-        rLinearF.relayOn();
-        pcf8575.digitalWrite(cLinearF, false);
-      }
+    currentMillisLinear = millis();
+    if (currentMillisLinear - previousMillisLinear >= parametersTimer[0])
+    {
+      previousMillisLinear = currentMillisLinear;
+      rLinearR.relayOff();
+      pcf8575.digitalWrite(cLinearF, true);
+      RunAutoStatus = 3;
+      initialMoveCutter = true;
+    }
+    else
+    {
+      // Software Interlock
+      rLinearR.relayOff();
+      pcf8575.digitalWrite(cLinearR, true);
+
+      rLinearF.relayOn();
+      pcf8575.digitalWrite(cLinearF, false);
     }
     break;
   case 3:
 
     if (initialMoveCutter == true)
     {
-      if (CutterStatusSensor == 0)
+      if (CutterStatusSensor == 1)
       {
         rCutter.relayOn();
         pcf8575.digitalWrite(cCutter, false);
+        // Serial.println("Waiting for the cutter to pass the upper limit.");
       }
       else
       {
+        delay(200);
         initialMoveCutter = false;
+        // Serial.println("Setting the Initial move cutter to False.");
       }
     }
     else
     {
-      if (CutterStatusSensor == 0)
+      if (CutterStatusSensor == 1)
       {
         rCutter.relayOff();
         pcf8575.digitalWrite(cCutter, true);
@@ -320,7 +324,7 @@ void runAuto()
     else
     {
       RunAutoStatus = 2;
-      timerLinear.start();
+      previousMillisLinear = millis();
     }
     break;
 
@@ -360,7 +364,7 @@ void readButtonUpState()
           }
           else
           {
-            parametersTimer[currentSettingScreen] += 1;
+            parametersTimer[currentSettingScreen] += 10;
           }
         }
         else
@@ -417,7 +421,7 @@ void readButtonUpState()
             }
             else
             {
-              parametersTimer[currentSettingScreen] += 1;
+              parametersTimer[currentSettingScreen] += 10;
             }
           }
           else
@@ -488,7 +492,7 @@ void readButtonDownState()
           }
           else
           {
-            parametersTimer[currentSettingScreen] -= 1;
+            parametersTimer[currentSettingScreen] -= 10;
           }
         }
         else
@@ -557,7 +561,7 @@ void readButtonDownState()
               }
               else
               {
-                parametersTimer[currentSettingScreen] -= 1;
+                parametersTimer[currentSettingScreen] -= 10;
               }
             }
           }
@@ -868,6 +872,7 @@ void printSettingScreen(String SettingTitle, String Unit, int Value, bool EditFl
 void printRunAuto(String SettingTitle, String Process, String TimeRemaining)
 {
   lcd.clear();
+  lcd.setCursor(0, 0);
   lcd.print(SettingTitle);
   lcd.setCursor(0, 1);
   lcd.print(Process);
@@ -915,13 +920,14 @@ void printScreen()
   }
   else if (runAutoFlag == true)
   {
+    int CurrentTime = parametersTimer[0] - (currentMillisLinear - previousMillisLinear);
     switch (RunAutoStatus)
     {
     case 1:
-      printRunAuto("Homing", "All Motors", timerLinearHoming.getTimeRemaining());
+      printRunAuto("Homing             ", "All Motors         ", timerLinearHoming.getTimeRemaining());
       break;
     case 2:
-      printRunAuto("Moving Linear", "Forward", timerLinear.getTimeRemaining());
+      printRunAuto("Moving Linear      ", "Forward", String(CurrentTime));
       break;
     case 3:
       printRunAuto("Cutting", "N/A", "N/A");
